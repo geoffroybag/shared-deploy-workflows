@@ -2,27 +2,24 @@ name: Deploy
 
 on:
   workflow_call:
-    inputs:
-      pkg_name:
-        required: true
-        type: string
-      preview_port:
-        required: true
-        type: string
-    secrets:
-      ssh_password:
-        required: true
+    # No secrets passed by the caller
+    inputs: {}
 
 jobs:
-  build:
-    name: Deploy to server
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout calling repo
         uses: actions/checkout@v3
 
-      - name: Deploy over SSH
+      - name: Read values from package.json
+        id: pkg
+        run: |
+          echo "PKG_NAME=$(jq -r '.name' package.json)" >> $GITHUB_OUTPUT
+          echo "PREVIEW_PORT=$(jq -r '.previewPort' package.json)" >> $GITHUB_OUTPUT
+
+      - name: Deploy via SSH
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.HOST }}
@@ -33,7 +30,7 @@ jobs:
           script: |
             export NVM_DIR=~/.nvm
             . ~/.nvm/nvm.sh
-            cd websites/${{ inputs.pkg_name }}
+            cd websites/${{ steps.pkg.outputs.PKG_NAME }}
 
             echo "Checking out main branch..."
             if ! git checkout main; then
@@ -52,5 +49,5 @@ jobs:
             npm install
             npm run build:preview
 
-            pm2 delete ${{ inputs.pkg_name }} || true
-            MODE=preview PORT=${{ inputs.preview_port }} pm2 start npm --name ${{ inputs.pkg_name }} -- run start
+            pm2 delete ${{ steps.pkg.outputs.PKG_NAME }} || true
+            MODE=preview PORT=${{ steps.pkg.outputs.PREVIEW_PORT }} pm2 start npm --name ${{ steps.pkg.outputs.PKG_NAME }} -- run start
